@@ -1,0 +1,38 @@
+name: Build
+
+on:
+  push:
+    branches: [ main, amazon-music-v1 ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish
+        shell: pwsh
+        run: dotnet publish SpotifyTaskbarWidget.csproj -c Release -r win-x64 --self-contained false -o publish /p:PublishSingleFile=true
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AmazonMusicTaskbarWidget-win-x64
+          path: |
+            publish/AmazonMusicTaskbarWidget.exe
+            README.md
+            LICENSE
+            NOTICE.md
