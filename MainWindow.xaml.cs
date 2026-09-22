@@ -16,7 +16,7 @@ namespace SpotifyTaskbarWidget;
 public partial class MainWindow : Window
 {
     private const string RunKeyPath = @"Software\Microsoft\Windows\CurrentVersion\Run";
-    private const string RunValueName = "SpotifyTaskbarWidget";
+    private const string RunValueName = "AmazonMusicTaskbarWidget";
 
     // Link de donativos; vazio = item de menu oculto
     private const string DonateUrl = "https://ko-fi.com/mechanicwb2";
@@ -198,9 +198,11 @@ public partial class MainWindow : Window
         ProgressMenu.Header = L.ProgressBar;
         ScrollOnceMenu.Header = L.ScrollTitleOnce;
         LauncherMenu.Header = L.ShowLauncher;
+        LauncherMenu.Visibility = Visibility.Collapsed;
         LauncherMenu.ToolTip = L.ShowLauncherTip;
         AutoStartMenu.Header = L.AutoStart;
         OpenSpotifyMenu.Header = L.OpenSpotify;
+        OpenSpotifyMenu.Visibility = Visibility.Collapsed;
         UpdateMenu.Header = L.CheckUpdates;
         DonateMenu.Header = L.Donate;
         DonateMenu.Visibility = DonateUrl.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -224,6 +226,7 @@ public partial class MainWindow : Window
     {
         _uiReady = true; // InitializeComponent terminou: elementos nomeados existem
         ApplyLanguage();
+        Root.Cursor = Cursors.Arrow;
         if (PackagedApp.IsPackaged)
         {
             UpdateMenu.Visibility = Visibility.Collapsed; // a Store trata das atualizações
@@ -920,7 +923,7 @@ public partial class MainWindow : Window
         _refreshing = true;
         try
         {
-            bool processAlive = Process.GetProcessesByName("Spotify").Length > 0;
+            bool processAlive = _media.HasSession;
 
             // As chamadas SMTC podem ficar penduradas para sempre numa sessão em
             // teardown (Spotify a fechar/reabrir) — sem timeout, a flag _refreshing
@@ -1007,7 +1010,7 @@ public partial class MainWindow : Window
 
             if (track == null || string.IsNullOrWhiteSpace(track.Title))
             {
-                TitleText.Text = "Spotify";
+                TitleText.Text = "Amazon Music";
                 ArtistText.Text = L.NothingPlaying;
                 SetPlayPauseIcon(false);
                 ShuffleIcon.Fill = DimWhite;
@@ -1032,50 +1035,16 @@ public partial class MainWindow : Window
 
             // Estado real (favoritos + aleatório + repetição) da árvore de
             // acessibilidade do Spotify; o SMTC serve de rede de segurança.
+            // Amazon Music compatibility fork: no Spotify UI Automation.
             string key = track.Title + "|" + track.Artist;
             bool keyChanged = key != _lastTrackKey;
-            if (keyChanged || _uiaDirty || DateTime.UtcNow - _lastUiaStateAt > TimeSpan.FromSeconds(5))
-            {
-                _uiaDirty = false;
-                var state = (Liked: (bool?)null, Shuffle: ShuffleMode.Unknown, Repeat: RepeatMode.Unknown, Fresh: false);
-                try { state = await Task.Run(() => _uia.GetState(track.Title)).WaitAsync(TimeSpan.FromSeconds(8)); }
-                catch (TimeoutException) { }
-                _lastStateFresh = state.Fresh;
-                // Grupo ainda da faixa anterior (zombie): não mostrar o tick antigo
-                _uiaState = (state.Fresh ? state.Liked : null, state.Shuffle, state.Repeat);
-                _lastUiaStateAt = DateTime.UtcNow;
-            }
-            if (keyChanged)
-                _ = SettleStateAsync(); // re-ler até o Spotify renderizar a barra da faixa nova
-            var (liked, uiaMode, repeatMode) = _uiaState;
-            // Depois de adicionar aos favoritos, ignorar "não gostado" antigo — o
-            // texto do botão do Spotify pode demorar vários segundos a atualizar
-            if (liked == false && DateTime.UtcNow - _likedOptimisticAt < TimeSpan.FromSeconds(8))
-                liked = true;
-            _liked = liked;
-
-            ApplyRepeatVisual(repeatMode);
-
-            LikeIcon.Data = liked == true ? CheckCircleGeo : AddCircleGeo;
-            LikeIcon.Fill = liked == true ? SpotifyGreen : (liked == false ? Subdued : DimWhite);
-            // Honesto: com o Spotify minimizado não conseguimos confirmar o
-            // estado (null) — dizê-lo em vez de deixar o "+" parecer "não gostado"
-            LikeButton.ToolTip = liked == true ? L.TipLiked
-                               : liked == false ? L.TipLikeAdd
-                               : L.TipLikeUnknown;
-
-            ShuffleMode mode = uiaMode;
-            // A rede de segurança do SMTC atrasa-se vários segundos após um
-            // clique — sobrepor-se a uma leitura UIA fresca fazia o ícone
-            // piscar On→Off→On; janela de graça como no play/pause
-            if (DateTime.UtcNow - _shuffleToggledAt > TimeSpan.FromSeconds(4))
-            {
-                if (track.IsShuffle == false && mode != ShuffleMode.Unknown)
-                    mode = ShuffleMode.Off;
-                else if (track.IsShuffle == true && mode is ShuffleMode.Off or ShuffleMode.Unknown)
-                    mode = ShuffleMode.On;
-            }
-
+            _liked = null;
+            ApplyRepeatVisual(RepeatMode.Unknown);
+            LikeIcon.Data = AddCircleGeo;
+            LikeIcon.Fill = DimWhite;
+            var mode = track.IsShuffle == true ? ShuffleMode.On
+                     : track.IsShuffle == false ? ShuffleMode.Off
+                     : ShuffleMode.Unknown;
             ApplyShuffleVisual(mode);
 
             if (keyChanged || _artDirty)
@@ -1758,8 +1727,8 @@ public partial class MainWindow : Window
         }
         else if (_pressed)
         {
+            // Amazon Music compatibility fork: background click intentionally does nothing.
             _pressed = false;
-            SpotifyActions.OpenSpotifyWindow();
         }
     }
 
@@ -1768,7 +1737,7 @@ public partial class MainWindow : Window
     private void MoveMode_Click(object sender, RoutedEventArgs e)
     {
         _moveMode = MoveMenu.IsChecked;
-        Root.Cursor = _moveMode ? Cursors.SizeAll : Cursors.Hand;
+        Root.Cursor = _moveMode ? Cursors.SizeAll : Cursors.Arrow;
     }
 
     private void ResetPos_Click(object sender, RoutedEventArgs e)
@@ -1780,7 +1749,7 @@ public partial class MainWindow : Window
         _settings.Save();
         MoveMenu.IsChecked = false;
         _moveMode = false;
-        Root.Cursor = Cursors.Hand;
+        Root.Cursor = Cursors.Arrow;
         UpdatePosition();
     }
 
