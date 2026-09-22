@@ -7,6 +7,10 @@ on:
         description: Release tag (for example v1.0.0)
         required: true
         default: v1.0.0
+  push:
+    branches: [ main ]
+    paths:
+      - release/v1.0.0.trigger
 
 permissions:
   contents: write
@@ -14,6 +18,8 @@ permissions:
 jobs:
   release:
     runs-on: windows-latest
+    env:
+      VERSION: ${{ github.event_name == 'workflow_dispatch' && inputs.version || 'v1.0.0' }}
 
     steps:
       - name: Checkout main
@@ -24,8 +30,6 @@ jobs:
 
       - name: Validate version
         shell: pwsh
-        env:
-          VERSION: ${{ inputs.version }}
         run: |
           if ($env:VERSION -notmatch '^v\d+\.\d+\.\d+$') {
             throw "Version must look like v1.0.0"
@@ -42,8 +46,6 @@ jobs:
 
       - name: Prepare release package
         shell: pwsh
-        env:
-          VERSION: ${{ inputs.version }}
         run: |
           New-Item -ItemType Directory -Force -Path release-package | Out-Null
           Copy-Item publish/AmazonMusicTaskbarWidget.exe release-package/
@@ -56,27 +58,23 @@ jobs:
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
-          VERSION: ${{ inputs.version }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          if (git ls-remote --exit-code --tags origin "refs/tags/$env:VERSION") {
-            Write-Host "Tag $env:VERSION already exists."
-          } else {
+          git ls-remote --exit-code --tags origin "refs/tags/$env:VERSION" *> $null
+          if ($LASTEXITCODE -ne 0) {
             git tag "$env:VERSION" "$env:GITHUB_SHA"
             git push origin "$env:VERSION"
           }
 
-          $notes = "RELEASE_NOTES_v1.0.0.md"
-          if ($env:VERSION -ne "v1.0.0") {
-            $notes = $null
-          }
+          gh release view "$env:VERSION" *> $null
+          $releaseExists = $LASTEXITCODE -eq 0
 
-          if (gh release view "$env:VERSION" *> $null) {
+          if ($releaseExists) {
             gh release upload "$env:VERSION" publish/AmazonMusicTaskbarWidget.exe "AmazonMusicTaskbarWidget-$env:VERSION-win-x64.zip" --clobber
-          } elseif ($notes) {
-            gh release create "$env:VERSION" publish/AmazonMusicTaskbarWidget.exe "AmazonMusicTaskbarWidget-$env:VERSION-win-x64.zip" --title "$env:VERSION" --notes-file $notes
+          } elseif ($env:VERSION -eq "v1.0.0") {
+            gh release create "$env:VERSION" publish/AmazonMusicTaskbarWidget.exe "AmazonMusicTaskbarWidget-$env:VERSION-win-x64.zip" --title "$env:VERSION" --notes-file RELEASE_NOTES_v1.0.0.md
           } else {
             gh release create "$env:VERSION" publish/AmazonMusicTaskbarWidget.exe "AmazonMusicTaskbarWidget-$env:VERSION-win-x64.zip" --title "$env:VERSION" --generate-notes
           }
