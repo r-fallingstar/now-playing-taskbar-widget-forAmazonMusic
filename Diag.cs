@@ -39,7 +39,7 @@ internal static class Diag
 
                 var dir = Path.Combine(
                     Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                    "SpotifyTaskbarWidget");
+                    "AmazonMusicTaskbarWidget");
                 Directory.CreateDirectory(dir);
                 string file = Path.Combine(dir, "errors.log");
                 // Teto: recomeçar quando passa de 1 MB (o valor está nos casos

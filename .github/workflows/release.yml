@@ -1,0 +1,82 @@
+name: Create release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release tag (for example v1.0.0)
+        required: true
+        default: v1.0.0
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: windows-latest
+
+    steps:
+      - name: Checkout main
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Validate version
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          if ($env:VERSION -notmatch '^v\d+\.\d+\.\d+$') {
+            throw "Version must look like v1.0.0"
+          }
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Publish self-contained build
+        shell: pwsh
+        run: dotnet publish SpotifyTaskbarWidget.csproj -c Release -r win-x64 --self-contained true -o publish /p:PublishSingleFile=true
+
+      - name: Prepare release package
+        shell: pwsh
+        env:
+          VERSION: ${{ inputs.version }}
+        run: |
+          New-Item -ItemType Directory -Force -Path release-package | Out-Null
+          Copy-Item publish/AmazonMusicTaskbarWidget.exe release-package/
+          Copy-Item README.md release-package/
+          Copy-Item LICENSE release-package/
+          Copy-Item NOTICE.md release-package/
+          Compress-Archive -Path release-package/* -DestinationPath "AmazonMusicTaskbarWidget-$env:VERSION-win-x64.zip" -Force
+
+      - name: Create tag and GitHub Release
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if (git ls-remote --exit-code --tags origin "refs/tags/$env:VERSION") {
+            Write-Host "Tag $env:VERSION already exists."
+          } else {
+            git tag "$env:VERSION" "$env:GITHUB_SHA"
+            git push origin "$env:VERSION"
+          }
+
+          $notes = "RELEASE_NOTES_v1.0.0.md"
+          if ($env:VERSION -ne "v1.0.0") {
+            $notes = $null
+          }
+
+          if (gh release view "$env:VERSION" *> $null) {
+            gh release upload "$env:VERSION" publish/AmazonMusicTaskbarWidget.exe "AmazonMusicTaskbarWidget-$env:VERSION-win-x64.zip" --clobber
+          } elseif ($notes) {
+            gh release create "$env:VERSION" publish/AmazonMusicTaskbarWidget.exe "AmazonMusicTaskbarWidget-$env:VERSION-win-x64.zip" --title "$env:VERSION" --notes-file $notes
+          } else {
+            gh release create "$env:VERSION" publish/AmazonMusicTaskbarWidget.exe "AmazonMusicTaskbarWidget-$env:VERSION-win-x64.zip" --title "$env:VERSION" --generate-notes
+          }
