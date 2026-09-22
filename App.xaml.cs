@@ -13,7 +13,7 @@ public partial class App : Application
 
     protected override void OnStartup(StartupEventArgs e)
     {
-        _mutex = new Mutex(true, "SpotifyTaskbarWidget_SingleInstance", out bool isNew);
+        _mutex = new Mutex(true, "AmazonMusicTaskbarWidget_SingleInstance", out bool isNew);
         if (!isNew)
         {
             IntentionalExit = true;
