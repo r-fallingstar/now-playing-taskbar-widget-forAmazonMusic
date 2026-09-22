@@ -46,15 +46,15 @@ public class WidgetSettings
     public bool ShowPlay { get; set; } = true;
     public bool ShowPrev { get; set; } = true;
     public bool ShowNext { get; set; } = true;
-    public bool ShowLike { get; set; } = true;
-    public bool ShowShuffle { get; set; } = true;
-    public bool ShowRepeat { get; set; } = true;
-    public bool ShowVolume { get; set; } = true;
+    public bool ShowLike { get; set; } = false;
+    public bool ShowShuffle { get; set; } = false;
+    public bool ShowRepeat { get; set; } = false;
+    public bool ShowVolume { get; set; } = false;
 
     private static readonly object SaveLock = new();
 
     private static string Dir =>
-        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "SpotifyTaskbarWidget");
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AmazonMusicTaskbarWidget");
 
     private static string FilePath => Path.Combine(Dir, "settings.json");
 
