@@ -1,127 +1,104 @@
-# Now Playing - Taskbar Widget
+# Now Playing - Taskbar Widget for Amazon Music
 
-A now-playing widget embedded right into the Windows taskbar: album art, title
-and artist of whatever's playing, with full controls — play/pause, skips and a
-seekable progress bar. It follows any player through the Windows media session
-(Spotify, YouTube in a browser, Apple Music, Windows Media Player, and more),
-and for Spotify it adds the liked state, all three shuffle modes, repeat and
-volume. Runs on Windows 10 and Windows 11.
+Amazon Music の再生情報を Windows のタスクバー上に表示する、**非公式の互換フォーク**です。
 
-> Formerly "Taskbar Widget for Spotify". Independent project, **not affiliated
-> with, sponsored or endorsed by Spotify AB**. "Spotify" is a trademark of
-> Spotify AB.
+このリポジトリは [mechanicwb2-hub/now-playing-taskbar-widget](https://github.com/mechanicwb2-hub/now-playing-taskbar-widget) をベースにしており、
+Amazon Music の不足した SMTC メタデータを補う
+[Fuku856/Amazon-Music-SMTC-Bridge](https://github.com/Fuku856/Amazon-Music-SMTC-Bridge)
+と組み合わせて使います。
 
-![demo](docs/demo.gif)
+> **Unofficial project.** Amazon Music / Amazon / Spotify / Discord / AmazonMusic SMTC Bridge の公式製品・公式連携ではありません。
+> 元プロジェクトの作者 MechanicWB とも別管理のフォークです。
 
-## Install
+## v1.0.0
 
-- **Microsoft Store (recommended — always the latest version):**
-  [**Now Playing - Taskbar Widget**](https://apps.microsoft.com/detail/9p12tljzg2cj) —
-  one-click install, automatic updates, works with Smart App Control enabled,
-  and supports both Windows 10 (2004+) and Windows 11.
-- **winget** (pending review): `winget install MechanicWB.TaskbarWidgetForSpotify`
-- UI languages: English and Portuguese (follows your Windows language).
+会話内でテストしていた「v6」互換パッチを、公開用の **v1.0.0** としてソースへ統合したものです。
 
-> The Microsoft Store has the current release. The GitHub Releases here may lag
-> behind — if you want the newest version (universal player support, Windows 10),
-> install from the Store.
+主な変更:
 
-## How it works
+- `AmazonMusicSmtc_...!App` の SMTC セッションを優先して使用
+- Amazon Music 本体の不完全な `AmazonMobileLLC...` セッションを選ばない
+- アルバムアートを 64 KiB チャンクで読み込み、公開タイミングの競合に対してリトライ
+- 表示判定を `Spotify.exe` ではなく Bridge セッション基準に変更
+- Spotify 専用 UI Automation を Amazon Music 版では使用しない
+- 曲名・ジャケット・余白の左クリックを無効化
+- `spotify:` URI を呼ばない
+- Amazon Music 版の設定・ログを `%APPDATA%\AmazonMusicTaskbarWidget\` に分離
+- Spotify 専用の Like / Shuffle / Repeat / Volume は既定で非表示
 
-- Track data comes from the **Windows media session API (SMTC)** — the same one
-  behind the Windows volume flyout. Any player that reports to Windows shows up
-  there (Spotify, YouTube, Apple Music, Windows Media Player…), so the widget
-  follows whatever is actually playing, with **no login or API keys**.
-- For Spotify's extra controls (liked state, Smart Shuffle, repeat, internal
-  volume) there is no clean API, so the widget reads Spotify's own accessibility
-  tree via UI Automation.
-- The taskbar no longer supports "deskbands", so the widget is a borderless
-  always-visible window docked over the empty area of the taskbar.
-- **Automatic positioning:** it aligns itself next to the clock/weather area and
-  never overlaps the app buttons or the system tray. The Windows 10 and 11
-  taskbars are completely different internally (11 is XAML, 10 is classic child
-  windows), so each has its own positioning logic. Works on any resolution/DPI,
-  adapts to left-aligned taskbars, follows auto-hide, and supports multiple
-  monitors.
-- When the taskbar gets crowded it shrinks to just the album art instead of
-  overlapping your app buttons, and hides if there is really no room.
-- Hides automatically when an app is fullscreen (games, videos).
+## 必要なもの
 
-## Usage
+- Windows 10 2004+ または Windows 11
+- Windows 版 Amazon Music
+- [AmazonMusic SMTC Bridge](https://github.com/Fuku856/Amazon-Music-SMTC-Bridge)
+- ソースからビルドする場合は .NET 8 SDK
 
-- **Position:** locked and automatic by default. To move it: right-click →
-  *Move widget*, drag, and untick to lock it in the new spot. *Reset to
-  automatic position* brings back auto alignment.
-- **Choose the player:** right-click → *Player* to follow any player
-  automatically (default), lock the widget to Spotify only, or pin the player
-  that's currently playing, so YouTube and others don't take it over when you
-  only want Spotify.
-- **Multiple monitors:** right-click → *Monitor* and tick every taskbar you
-  want a widget on — each display gets its own, with shared settings. (Needs
-  Windows' "show my taskbar on all displays" enabled for secondary monitors.)
-- **Size:** right-click → *Size* → Small / Normal / Large.
-- **Brightness:** right-click → *Brightness* — a slider from 20% to 100%, handy
-  to dim the widget on OLED or transparent taskbars. Scroll the mouse wheel
-  over it to fine-tune.
-- **Buttons:** right-click → *Buttons* to choose which controls appear —
-  play/pause, favorites (+), shuffle, previous, next, repeat, volume. Hide
-  play/pause to use it as a pure now-playing display.
-- **Long titles:** scroll continuously by default; right-click → *Scroll title
-  only once* to have them scroll once at the start of each track and then rest.
-- **Favorites (+, Spotify):** reads and clicks Spotify's own button through the
-  Spotify window's accessibility tree — shows a **green check** when the track
-  is already saved, and adds it without stealing focus. Spotify freezes this
-  info while its window is minimized (and has locked the Web API alternative),
-  so the widget shows the green check only when it can actually confirm it,
-  otherwise it stays neutral rather than guessing. See
-  [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for the full explanation.
-- **Shuffle (Spotify):** all three modes — off (gray), shuffle (green) and
-  **Smart Shuffle** (green with a star). Repeat supports off / playlist / track.
-- **Volume:** for Spotify it moves Spotify's own slider; for other players it
-  uses the Windows app volume.
-- **Progress bar:** live position at the bottom of the widget; click to seek.
-- Settings and error log live in `%APPDATA%\SpotifyTaskbarWidget\`.
+Amazon Music 単体の SMTC は曲名以外の情報が欠ける場合があるため、このフォークは **SMTC Bridge のセッションを前提**にしています。
 
-## Pro (optional)
+## 使い方
 
-The widget is free. An optional paid **Pro** add-on on the Microsoft Store adds
-themes, an audio visualizer, synced lyrics and global hotkeys. The whole core
-(now-playing, controls, positioning, any-player support, Windows 10 and 11)
-stays free.
+1. Amazon Music と AmazonMusic SMTC Bridge を起動します。
+2. Amazon Music で曲を再生します。
+3. Releases から Windows x64 版を取得して `AmazonMusicTaskbarWidget.exe` を起動します。
+4. タスクバー上のウィジェットを右クリックすると、位置・サイズ・表示ボタンなどを変更できます。
 
-## Troubleshooting
+Microsoft Store 版の元ウィジェットと同時起動すると重なることがあるため、テスト時は片方を終了してください。
 
-Something not working? See **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** — covers
-"nothing playing", antivirus flags, Smart App Control, positioning and more.
-Still stuck?
-[Open an issue](https://github.com/mechanicwb2-hub/now-playing-taskbar-widget/issues).
+## 操作
 
-## Support
+Amazon Music + Bridge で主に利用する機能:
 
-Free and open source. If you find it useful, you can support development on
-**[Ko-fi](https://ko-fi.com/mechanicwb2)** ☕
+- アルバムアート / 曲名 / アーティスト表示
+- 再生 / 一時停止
+- 前の曲 / 次の曲
+- 再生位置表示
+- タスクバー上の自動配置
+- 複数モニター
+- サイズ / 明るさ / 表示ボタン設定
 
-## Building
+### 制限事項
 
-Requires the .NET 8 SDK:
+- AmazonMusic SMTC Bridge はシーク要求を Amazon Music に中継しないため、進捗バーをクリックしてもシークできない場合があります。
+- Spotify 固有の「お気に入り」「Smart Shuffle」「Spotify 内部音量」などはこのフォークの対象外です。
+- Bridge 側または Amazon Music 側の仕様変更で動作しなくなる可能性があります。
+- このフォークには AmazonMusic SMTC Bridge のコードやバイナリは含まれていません。
 
-```
-dotnet publish SpotifyTaskbarWidget.csproj -c Release -o publish
+## ログ
+
+```text
+%APPDATA%\AmazonMusicTaskbarWidget\errors.log
 ```
 
-Produces a single `SpotifyTaskbarWidget.exe` (needs the .NET 8 Desktop Runtime;
-for a standalone exe, flip `SelfContained` to `true`).
+正常時には、たとえば次のような行が出ます。
 
-> Note: the latest release ships on the Microsoft Store; the source on this
-> branch may be behind the Store version.
+```text
+Using AmazonMusic SMTC Bridge session: AmazonMusicSmtc_...!App
+AmazonMusic artwork read successfully (... bytes).
+```
 
-## Structure
+## ソースからビルド
 
-| File | Role |
-|---|---|
-| `MainWindow.xaml(.cs)` | Widget UI, positioning, responsive layout, menu |
-| `MediaService.cs` | Windows media session (track, art, play/pause, timeline) |
-| `SpotifyUiaService.cs` | Spotify window accessibility: favorites, shuffle, repeat, volume |
-| `SpotifyVolume.cs` | CoreAudio: app volume / play state via the Windows mixer |
-| `Interop.cs` | Win32 (taskbar position, topmost, fullscreen detection, input) |
-| `WidgetSettings.cs` | Position, scale, theme and visible buttons, stored as JSON |
+.NET 8 SDK をインストール後:
+
+```powershell
+dotnet publish SpotifyTaskbarWidget.csproj -c Release -r win-x64 -o publish
+```
+
+単体で動く self-contained ビルド:
+
+```powershell
+dotnet publish SpotifyTaskbarWidget.csproj -c Release -r win-x64 --self-contained true -o publish
+```
+
+出力ファイル名は `AmazonMusicTaskbarWidget.exe` です。
+
+## Credits
+
+- Original project: [MechanicWB / now-playing-taskbar-widget](https://github.com/mechanicwb2-hub/now-playing-taskbar-widget)
+- Amazon Music SMTC metadata bridge: [Fuku856 / Amazon-Music-SMTC-Bridge](https://github.com/Fuku856/Amazon-Music-SMTC-Bridge)
+
+## License
+
+元プロジェクトは MIT License です。リポジトリ内の [LICENSE](LICENSE) に、元の著作権表示とライセンス全文を保持しています。
+
+このフォークはその条件に従って改変・再配布しています。AmazonMusic SMTC Bridge は別プロジェクトであり、このリポジトリには同プロジェクトのソースを含めていません。
