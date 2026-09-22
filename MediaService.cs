@@ -1,3 +1,4 @@
+using System.IO;
 using Windows.Media.Control;
 using Windows.Storage.Streams;
 
@@ -17,12 +18,19 @@ public sealed class MediaService
     private GlobalSystemMediaTransportControlsSessionManager? _manager;
     private GlobalSystemMediaTransportControlsSession? _session;
 
+    private const int ThumbnailRetryCount = 4;
+    private const int ThumbnailChunkBytes = 64 * 1024;
+    private const int MaxThumbnailBytes = 16 * 1024 * 1024;
+
     /// <summary>Disparado (em thread de background) quando a faixa ou o estado mudam.</summary>
     public event Action? Changed;
 
     /// <summary>Disparado só quando a posição/duração mudam — acontece a cada poucos
     /// segundos, por isso o tratamento tem de ser leve.</summary>
     public event Action? TimelineChanged;
+
+    /// <summary>True while the AmazonMusic SMTC Bridge session is available.</summary>
+    public bool HasSession => _session != null;
 
     public async Task InitializeAsync()
     {
@@ -75,30 +83,42 @@ public sealed class MediaService
         }
     }
 
+    private static bool IsAmazonMusicBridge(GlobalSystemMediaTransportControlsSession session)
+    {
+        var id = session.SourceAppUserModelId ?? string.Empty;
+
+        // Current identity published by Fuku856/Amazon-Music-SMTC-Bridge:
+        // AmazonMusicSmtc_<package id>!App
+        // Keep tolerant aliases for older/test package identities.
+        return id.Contains("AmazonMusicSmtc", StringComparison.OrdinalIgnoreCase)
+            || id.Contains("AmazonMusic.SMTC", StringComparison.OrdinalIgnoreCase)
+            || id.Contains("AmazonMusicSMTC", StringComparison.OrdinalIgnoreCase);
+    }
+
     private void PickSession()
     {
         if (_manager == null) return;
 
-        // Apenas sessões do Spotify — sem fallback para outras apps (Chrome, etc.),
-        // senão o widget mostra media de outros programas quando o Spotify fecha.
         GlobalSystemMediaTransportControlsSession? chosen = null;
         try
         {
             var sessions = _manager.GetSessions();
-            chosen = sessions.FirstOrDefault(s =>
-                (s.SourceAppUserModelId ?? "").Contains("spotify", StringComparison.OrdinalIgnoreCase));
-            // Há sessões mas nenhuma é do Spotify: só é anómalo se o Spotify
-            // estiver mesmo a correr (Chrome/YouTube com o Spotify fechado é o
-            // dia-a-dia normal — registá-lo enchia o log de falsos erros)
-            if (chosen == null && sessions.Count > 0)
+
+            // Amazon Music itself publishes another incomplete session
+            // (AmazonMobileLLC...). Never select it; use the bridge only.
+            chosen = sessions.FirstOrDefault(IsAmazonMusicBridge);
+
+            if (chosen == null)
             {
-                var procs = System.Diagnostics.Process.GetProcessesByName("Spotify");
-                bool spotifyRunning = procs.Length > 0;
-                foreach (var p in procs) p.Dispose();
-                if (spotifyRunning)
-                    Diag.Once("no-spotify-session",
-                        "Media sessions present but none matches Spotify: " +
-                        string.Join(", ", sessions.Select(x => x.SourceAppUserModelId ?? "(null)")));
+                Diag.Once("no-amazon-bridge-session",
+                    "AmazonMusic SMTC Bridge session not found. Sessions: " +
+                    string.Join(", ", sessions.Select(x => x.SourceAppUserModelId ?? "(null)")));
+            }
+            else
+            {
+                Diag.Once("amazon-bridge-session",
+                    "Using AmazonMusic SMTC Bridge session: " +
+                    (chosen.SourceAppUserModelId ?? "(null)"));
             }
         }
         catch (Exception ex)
@@ -106,9 +126,6 @@ public sealed class MediaService
             Diag.Once("get-sessions", "Reading media sessions failed: " + ex.Message);
         }
 
-        // SessionsChanged chega em threads WinRT em rajadas (arranque/fecho do
-        // Spotify): sem lock, duas trocas entrelaçadas duplicavam subscrições
-        // ou deixavam handlers presos numa sessão morta
         lock (_pickLock)
         {
             var old = _session;
@@ -117,6 +134,7 @@ public sealed class MediaService
                 if (chosen == null) Changed?.Invoke();
                 return;
             }
+
             if (old != null)
             {
                 try
@@ -190,33 +208,92 @@ public sealed class MediaService
         }
         catch (Exception ex)
         {
-            Diag.Once("get-track", "Reading track from the Spotify session failed: " + ex.Message);
+            Diag.Once("get-track", "Reading track from AmazonMusic SMTC Bridge failed: " + ex.Message);
             return null;
         }
     }
 
+    /// <summary>
+    /// Reads album art from the bridge's RandomAccessStreamReference.
+    ///
+    /// The upstream widget trusted stream.Size and asked DataReader to load the
+    /// whole stream in one shot. Some cross-process/in-memory SMTC thumbnails can
+    /// report a size before every byte is immediately readable; that path then
+    /// throws and upstream silently returns null. This version reads until EOF in
+    /// chunks and retries transient publication races.
+    /// </summary>
     public async Task<byte[]?> GetThumbnailAsync()
     {
         var s = _session;
         if (s == null) return null;
-        try
-        {
-            var props = await s.TryGetMediaPropertiesAsync();
-            if (props?.Thumbnail == null) return null;
 
-            using var stream = await props.Thumbnail.OpenReadAsync();
-            if (stream.Size == 0) return null;
+        Exception? lastError = null;
 
-            var bytes = new byte[stream.Size];
-            using var reader = new DataReader(stream.GetInputStreamAt(0));
-            await reader.LoadAsync((uint)stream.Size);
-            reader.ReadBytes(bytes);
-            return bytes;
-        }
-        catch
+        for (int attempt = 0; attempt < ThumbnailRetryCount; attempt++)
         {
-            return null;
+            try
+            {
+                var props = await s.TryGetMediaPropertiesAsync();
+                if (props?.Thumbnail != null)
+                {
+                    using var stream = await props.Thumbnail.OpenReadAsync();
+                    var bytes = await ReadAllThumbnailBytesAsync(stream);
+                    if (bytes is { Length: > 0 })
+                    {
+                        Diag.Once("amazon-art-ok",
+                            $"AmazonMusic artwork read successfully ({bytes.Length} bytes).");
+                        return bytes;
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                lastError = ex;
+            }
+
+            if (attempt + 1 < ThumbnailRetryCount)
+                await Task.Delay(120 + (attempt * 120));
         }
+
+        if (lastError != null)
+        {
+            Diag.Once("amazon-art-read-failed",
+                "AmazonMusic artwork stream could not be read: " +
+                lastError.GetType().Name + ": " + lastError.Message);
+        }
+        else
+        {
+            Diag.Once("amazon-art-empty",
+                "AmazonMusic SMTC Bridge reported no readable artwork after retries.");
+        }
+
+        return null;
+    }
+
+    private static async Task<byte[]?> ReadAllThumbnailBytesAsync(IRandomAccessStreamWithContentType stream)
+    {
+        using var input = stream.GetInputStreamAt(0);
+        using var reader = new DataReader(input)
+        {
+            InputStreamOptions = InputStreamOptions.Partial,
+        };
+        using var output = new MemoryStream();
+
+        while (true)
+        {
+            uint loaded = await reader.LoadAsync((uint)ThumbnailChunkBytes);
+            if (loaded == 0)
+                break;
+
+            var chunk = new byte[(int)loaded];
+            reader.ReadBytes(chunk);
+            output.Write(chunk, 0, chunk.Length);
+
+            if (output.Length > MaxThumbnailBytes)
+                throw new InvalidDataException("SMTC thumbnail exceeded the 16 MiB safety limit.");
+        }
+
+        return output.Length == 0 ? null : output.ToArray();
     }
 
     public async Task TogglePlayPauseAsync()
