@@ -48,19 +48,6 @@ internal static class SpotifyActions
 
     public static void OpenSpotifyWindow()
     {
-        var proc = Process.GetProcessesByName("Spotify").FirstOrDefault(p => p.MainWindowHandle != IntPtr.Zero);
-        if (proc != null)
-        {
-            Interop.ShowWindow(proc.MainWindowHandle, Interop.SW_RESTORE);
-            Interop.SetForegroundWindow(proc.MainWindowHandle);
-        }
-        else
-        {
-            try
-            {
-                Process.Start(new ProcessStartInfo("spotify:") { UseShellExecute = true });
-            }
-            catch { }
-        }
+        // Amazon Music compatibility fork: intentionally disabled.
     }
 }
