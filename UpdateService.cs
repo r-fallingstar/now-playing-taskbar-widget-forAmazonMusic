@@ -13,12 +13,12 @@ namespace SpotifyTaskbarWidget;
 ///
 /// Para publicar uma atualização:
 ///  1. subir <Version> no .csproj e fazer publish;
-///  2. criar uma release no GitHub com tag "vX.Y.Z" e anexar o SpotifyTaskbarWidget.exe.
+///  2. criar uma release no GitHub com tag "vX.Y.Z" e anexar o AmazonMusicTaskbarWidget.exe.
 /// </summary>
 internal static class UpdateService
 {
     // Repositório GitHub "dono/repo" das releases. Com "CHANGEME", a verificação fica desativada.
-    public const string GitHubRepo = "mechanicwb2-hub/spotify-taskbar-widget";
+    public const string GitHubRepo = "r-fallingstar/now-playing-taskbar-widget-forAmazonMusic";
 
     public static bool IsConfigured => !GitHubRepo.Contains("CHANGEME");
 
@@ -53,7 +53,7 @@ internal static class UpdateService
             string name = asset.GetProperty("name").GetString() ?? "";
             // Nome EXATO: a release também tem o instalador (…-Setup.exe) e
             // "primeiro .exe" podia apanhá-lo — substituir-nos-íamos pelo setup
-            if (name.Equals("SpotifyTaskbarWidget.exe", StringComparison.OrdinalIgnoreCase))
+            if (name.Equals("AmazonMusicTaskbarWidget.exe", StringComparison.OrdinalIgnoreCase))
                 return (latest, asset.GetProperty("browser_download_url").GetString() ?? "");
         }
         return null;
@@ -76,7 +76,7 @@ internal static class UpdateService
         try
         {
             string target = Environment.ProcessPath!;
-            string temp = Path.Combine(Path.GetTempPath(), "SpotifyTaskbarWidget.update.exe");
+            string temp = Path.Combine(Path.GetTempPath(), "AmazonMusicTaskbarWidget.update.exe");
             string staged = target + ".new";
 
             byte[] bytes;
@@ -90,7 +90,7 @@ internal static class UpdateService
             }
             await File.WriteAllBytesAsync(temp, bytes);
 
-            string script = Path.Combine(Path.GetTempPath(), "SpotifyTaskbarWidget.update.cmd");
+            string script = Path.Combine(Path.GetTempPath(), "AmazonMusicTaskbarWidget.update.cmd");
             int pid = Environment.ProcessId;
             string body =
                 "@echo off\r\n" +
@@ -150,7 +150,7 @@ internal static class UpdateService
     private static HttpClient NewClient()
     {
         var http = new HttpClient();
-        http.DefaultRequestHeaders.UserAgent.ParseAdd("SpotifyTaskbarWidget");
+        http.DefaultRequestHeaders.UserAgent.ParseAdd("AmazonMusicTaskbarWidget");
         return http;
     }
 }
